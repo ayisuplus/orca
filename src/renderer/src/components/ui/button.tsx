@@ -33,9 +33,14 @@ const buttonVariants = cva(
         // Keep icon states visible on muted fields, which share accent's light-theme fill.
         'muted-field-icon':
           'text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground focus-visible:bg-foreground/[0.08] focus-visible:text-foreground aria-expanded:bg-foreground/[0.08] aria-expanded:text-foreground data-[state=open]:bg-foreground/[0.08] data-[state=open]:text-foreground',
-        // The head queued card's Steer: ghost, filled as the primary while the composer previews Steer queued.
+        // A secondary destructive action beside a primary one: muted until hovered.
+        'muted-destructive':
+          'text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:text-destructive',
+        // A queued row's Send/Steer: unfilled bold text that fills on hover.
+        'queued-row-action': 'font-semibold text-foreground hover:bg-foreground/9',
+        // The head queued card's Steer: the row action, filled as the primary while the composer previews Steer queued.
         'queued-head-steer':
-          'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 [[data-native-chat-root]:has([data-native-chat-steer-preview=steer-queued])_&]:bg-primary [[data-native-chat-root]:has([data-native-chat-steer-preview=steer-queued])_&]:text-primary-foreground',
+          'font-semibold text-foreground hover:bg-foreground/9 [[data-native-chat-root]:has([data-native-chat-steer-preview=steer-queued])_&]:bg-primary [[data-native-chat-root]:has([data-native-chat-steer-preview=steer-queued])_&]:text-primary-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
         // A quiet secondary link, such as a dialog footer's "Manual steps".
         'link-muted':
@@ -63,6 +68,8 @@ const buttonVariants = cva(
         // A `link` inside a sentence: no box of its own, so it wraps with the text and lines up with its edge.
         inlineText:
           "h-auto gap-1 rounded-sm p-0 align-baseline text-xs [&_svg:not([class*='size-'])]:size-3",
+        // A queued row's text action.
+        'row-action': "h-6.5 gap-1 rounded-[7px] px-2 text-xs [&_svg:not([class*='size-'])]:size-3",
         inline: 'h-6 gap-1 px-0 has-[>svg]:px-0',
         // A ghost name inside a row label: `inline`'s height, padded so its hover fill clears the text.
         inlineChip: 'h-6 gap-1 px-1.5',

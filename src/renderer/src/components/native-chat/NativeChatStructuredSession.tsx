@@ -56,6 +56,7 @@ import { cancelStructuredPrompt } from './session/structured/writes/native-chat-
 import { useNativeChatBotHome } from './NativeChatBotHomeScope'
 import { useStructuredAgentSessionHostExecution } from '@/components/native-chat/session/status/structured-agent-session-status-hooks'
 import { useNativeChatPaneFork } from '@/components/native-chat/messages/actions/use-native-chat-fork'
+import { NativeChatDock } from '@/components/native-chat/pane/dock/NativeChatDock'
 import { useAppStore } from '@/store/index'
 import { structuredAgentLabel } from '@/lib/agent-session/launch/structured-agent-session-launch-label'
 import { useNativeChatStructuredComposerTransport } from '@/components/native-chat/composer/submit/use-native-chat-structured-composer-transport'
@@ -261,7 +262,10 @@ export function NativeChatStructuredSession(props: Omit<NativeChatStructuredView
         <NativeChatCrewContext.Provider value={crew}>
           <NativeChatSurface surface={surface} working={controller.isWorking}>
             {nativeChatPaneHeader(props, ownerWorktreeId, surface.appearance.colorScheme, handOff)}
-            <div className="relative flex min-h-0 flex-1 flex-col">
+            <div
+              // A fitted dock sits below: keep a sliver of transcript until the dock's fallbacks give it up.
+              className="relative flex min-h-[calc(var(--spacing)*20)] flex-1 flex-col [[data-native-chat-dock-fit~=transcript]_&]:min-h-0"
+            >
               <NativeChatContextClearFade
                 // A read failure stays in view: no divider may come to end the fade.
                 clearing={controller.contextClear.clearing && viewState.kind !== 'error'}
@@ -332,17 +336,7 @@ export function NativeChatStructuredSession(props: Omit<NativeChatStructuredView
               </NativeChatContextClearFade>
             </div>
             {readFailure?.final ? null : (
-              <>
-                {/* Keep queued drafts outside the transcript and above the background-task dock. */}
-                <NativeChatQueuedMessageList
-                  controller={submits.queuedMessages}
-                  chatWorktreeId={ownerWorktreeId ?? null}
-                  agentName={agentLabel}
-                  statedFailures={startFailures}
-                  steerHeld={bot.stopControls.stopping || hostHeld}
-                  focusComposer={focusComposer}
-                  editAttachTo={{ terminalTabId: props.tabId, agent: props.agent, transport }}
-                />
+              <NativeChatDock>
                 {subagents.strip}
                 {/* Workers' open prompts stay pinned here, above this chat's own prompt. */}
                 <NativeChatPartyWorkerApprovalStack
@@ -367,6 +361,16 @@ export function NativeChatStructuredSession(props: Omit<NativeChatStructuredView
                 {composerShown || subagentOpen ? null : (
                   <NativeChatPromptSlotNotices notices={notices} />
                 )}
+                {/* A tab on whichever input surface comes next: the prompt card, an async question or the composer. */}
+                <NativeChatQueuedMessageList
+                  controller={submits.queuedMessages}
+                  chatWorktreeId={ownerWorktreeId ?? null}
+                  agentName={agentLabel}
+                  statedFailures={startFailures}
+                  steerHeld={bot.stopControls.stopping || hostHeld}
+                  focusComposer={focusComposer}
+                  editAttachTo={{ terminalTabId: props.tabId, agent: props.agent, transport }}
+                />
                 <NativeChatStructuredPromptCard
                   key={prompt ? `${prompt.itemId}:${prompt.revision}` : undefined}
                   prompt={prompt}
@@ -405,7 +409,7 @@ export function NativeChatStructuredSession(props: Omit<NativeChatStructuredView
                     recallSource={{ messages: session.messages, withoutImageMarkers: true }}
                   />
                 ) : null}
-              </>
+              </NativeChatDock>
             )}
             {handOff.dialog}
           </NativeChatSurface>

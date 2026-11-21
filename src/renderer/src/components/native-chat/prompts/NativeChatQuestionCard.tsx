@@ -1,24 +1,28 @@
-import { ImeTextarea } from '@/lib/text-input/ime/ime-text-field'
-import { useRef, useState, type RefObject } from 'react'
-import { Check, Pencil } from 'lucide-react'
+import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { cn } from '@/lib/class-names'
 import { translate } from '@/i18n/i18n'
 import { useTranslate } from '@/i18n/use-translate'
-import { NativeChatQuestionCardHeader } from './NativeChatQuestionCardHeader'
+import { NativeChatQuestionText } from './NativeChatQuestionText'
 import { NativeChatQuestionOption } from './NativeChatQuestionOption'
 import { NativeChatQuestionConfirmButton } from './NativeChatQuestionConfirmButton'
 import {
-  NativeChatQuestionSteps,
-  useReportNativeChatQuestionDraft,
-  foldNativeChatQuestionOnEscape,
-  type NativeChatQuestionCardDraft,
-  type NativeChatQuestionCardLook
-} from './NativeChatQuestionCardParts'
+  NativeChatQuestionCardHeader,
+  nativeChatQuestionCardLabel
+} from './NativeChatQuestionCardHeader'
+import { NativeChatQuestionAnswerField } from './NativeChatQuestionAnswerField'
 import type { AskAnswerSelection } from '../../../../../shared/native-chat/input/questions/native-chat-ask-answer'
 import type { AskPrompt } from '../../../../../shared/native-chat/input/questions/native-chat-ask-types'
 import { useNativeChatPromptCardFocus } from './use-native-chat-prompt-card-focus'
 import { useNativeChatQuestionAutoAdvance } from './use-native-chat-question-auto-advance'
 import { useNativeChatQuestionKeys } from './use-native-chat-question-keys'
+import { useNativeChatQuestionStepHeight } from './use-native-chat-question-step-height'
+import {
+  useReportNativeChatQuestionDraft,
+  foldNativeChatQuestionOnEscape,
+  type NativeChatQuestionCardDraft,
+  type NativeChatQuestionCardLook
+} from './NativeChatQuestionCardParts'
+import { invalidateNativeChatDockFit } from '../pane/dock/native-chat-dock-fit'
 import type { AgentJournalFreeTextInput } from '../../../../../shared/agent-session/journal/agent-session-journal-types'
 import {
   askAcceptsEmptyAnswer,
@@ -54,7 +58,6 @@ export type NativeChatQuestionCardProps = {
 
 // Reserve a non-option index so single-select holds either an option or typed text.
 const TYPED_ANSWER = -1
-const LINE_BREAKS = /[\r\n\u2028\u2029]/g
 
 const CONFIRM_LABEL = {
   submit: () => translate('components.native-chat.question.send', 'Submit'),
@@ -79,9 +82,12 @@ export function NativeChatQuestionCard({
 }: NativeChatQuestionCardProps): React.JSX.Element {
   const t = useTranslate()
   const cardRef = useRef<HTMLDivElement>(null)
-  const autoAdvance = useNativeChatQuestionAutoAdvance(isSubmitting || isCancelling)
+  const surfaceRef = useRef<HTMLDivElement>(null)
+  const blocked = isSubmitting || isCancelling
+  const autoAdvance = useNativeChatQuestionAutoAdvance(blocked)
   const [index, setIndex] = useState(0)
   useNativeChatPromptCardFocus(cardRef, shouldFocus, index)
+  useNativeChatQuestionStepHeight(surfaceRef, index)
   // Use indices because labels can repeat and the agent commits numbered rows.
   const [selections, setSelections] = useState<number[][]>(
     () => draft?.selections ?? prompt.questions.map(() => [])
@@ -91,13 +97,28 @@ export function NativeChatQuestionCard({
       draft?.otherText ?? prompt.questions.map((_, qi) => freeTextInputs?.[qi]?.initialValue ?? '')
   )
   useReportNativeChatQuestionDraft(draft, selections, otherText)
+  // Holds a sent answer until the next commit, which carries the caller's own pending state;
+  // after it, isSubmitting decides, so a refused, thrown or failed send leaves the card retryable.
+  const latchRef = useRef(false)
+  const blockedRef = useRef(blocked)
+  const [attempt, setAttempt] = useState(0)
+  useLayoutEffect(() => {
+    latchRef.current = false
+  }, [attempt])
+  useLayoutEffect(() => {
+    blockedRef.current = blocked
+  }, [blocked])
+  useLayoutEffect(() => {
+    if (cardRef.current) {
+      invalidateNativeChatDockFit(cardRef.current)
+    }
+  }, [index])
 
   const total = prompt.questions.length
   const isLast = index === total - 1
   const q = prompt.questions[index]!
   const questionAllowsOther = Array.isArray(allowOther) ? (allowOther[index] ?? false) : allowOther
   const freeTextInput = freeTextInputs?.[index]
-  const fieldTakesFocus = q.options.length === 0 || undefined
   const showsPreviews = askQuestionShowsPreviews(q)
   const answerPlaceholder =
     freeTextInput?.placeholder ??
@@ -146,28 +167,37 @@ export function NativeChatQuestionCard({
     return [...picked, ...(other ? [other] : [])].join(', ')
   }
 
-  const currentAnswered = answerFor(index).length > 0 || acceptsEmpty(index)
-  const anyAnswered = prompt.questions.some((_, i) => answerFor(i).length > 0 || acceptsEmpty(i))
+  const answered = (qi: number): boolean => answerFor(qi).length > 0 || acceptsEmpty(qi)
+  const currentAnswered = answered(index)
+  const anyAnswered = prompt.questions.some((_, i) => answered(i))
   // With nothing to dismiss (an item's ask), only a whole answer goes: Submit waits for every step.
   const nothingToSend =
     !onCancel && isLast && prompt.questions.some((_, i) => !answerFor(i) && !acceptsEmpty(i))
   const confirmLabel = askConfirmLabel(currentAnswered, isLast, anyAnswered || nothingToSend)
+  const skipAndSubmit =
+    confirmLabel === 'submit' && !currentAnswered && total > 1 && !nothingToSend
   const currentTypedAnswerChosen = typedAnswerChosen(index)
 
   const submitAll = (sel: number[][], oth: string[]): void => {
+    if (latchRef.current || blockedRef.current) {
+      return
+    }
     const resolved: AskAnswerSelection[] = prompt.questions.map((_, i) => ({
       indices: pickedOptions(i, sel),
       other: typedAnswerChosen(i, sel, oth) ? typedText(i, oth) : ''
     }))
-    const answered = resolved.map(
+    const answeredSteps = resolved.map(
       (s, i) => s.indices.length > 0 || (s.other ?? '').length > 0 || acceptsEmpty(i)
     )
     // With nothing to dismiss, only a whole answer goes, from any path (pick, Enter, Submit): an
     // empty step is shown instead.
-    const firstEmpty = onCancel ? -1 : answered.indexOf(false)
+    const firstEmpty = onCancel ? -1 : answeredSteps.indexOf(false)
     if (firstEmpty !== -1) {
       setIndex(firstEmpty)
-    } else if (answered.some(Boolean)) {
+    } else if (answeredSteps.some(Boolean)) {
+      latchRef.current = true
+      // Queued before onAnswer, so even a throwing send commits and releases the latch.
+      setAttempt((value) => value + 1)
       onAnswer(resolved)
     }
   }
@@ -187,6 +217,9 @@ export function NativeChatQuestionCard({
     optionIndex: number,
     via: 'pointer' | 'digit' | 'enter' = 'pointer'
   ): void => {
+    if (blocked) {
+      return
+    }
     const cur = selections[index] ?? []
     // Focus first, so Enter after any digit acts on the row that digit named.
     if (showsPreviews && via === 'digit') {
@@ -213,6 +246,9 @@ export function NativeChatQuestionCard({
 
   const confirm = (fromKeyboard = false): void => {
     autoAdvance.cancel()
+    if (blocked) {
+      return
+    }
     const action = askConfirmAction({ isLast, anyAnswered, fromKeyboard })
     if (action === 'proceed') {
       advanceOrSubmit(selections, otherText)
@@ -224,7 +260,7 @@ export function NativeChatQuestionCard({
   // Leaving the question by any other route drops a pending auto-advance.
   const goTo = (questionIndex: number): void => {
     autoAdvance.cancel()
-    setIndex(questionIndex)
+    setIndex(Math.max(0, Math.min(questionIndex, total - 1)))
   }
   useNativeChatQuestionKeys(
     cardRef,
@@ -252,193 +288,180 @@ export function NativeChatQuestionCard({
         onCollapse()
       }
     : undefined
-  const stepsInSurface = look?.stepsInSurface === true
-  const steps = (className?: string): React.JSX.Element => (
-    <NativeChatQuestionSteps
-      questions={prompt.questions}
-      current={index}
-      answered={prompt.questions.map((_, i) => answerFor(i).length > 0)}
-      disabled={isSubmitting}
-      onStep={goTo}
-      className={className}
-    />
-  )
 
   return (
     <div
       ref={cardRef}
       data-native-chat-prompt-card-focus={shouldFocus || undefined}
+      data-native-chat-queue-dock
+      data-native-chat-question-card
       // How many choices its digit keys pick, for a surface that sends other typing elsewhere.
       data-native-chat-question-options={q.options.length}
       role="group"
-      aria-label={q.question}
+      aria-label={nativeChatQuestionCardLabel(t, q, index, total)}
       tabIndex={-1}
-      // Capped against the chat pane (not the window) so the words that led to the question stay in view.
-      className={cn(
-        'flex max-h-[max(14rem,min(32rem,50%))] min-h-0 shrink-0 flex-col bg-chat-pane focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-        look?.frameClassName
-      )}
+      // The card opens focused but must not look picked or ringed; options draw their own focus.
+      className={cn('flex min-h-0 shrink flex-col bg-chat-pane outline-none', look?.frameClassName)}
       aria-busy={isSubmitting}
-      onKeyDown={(event) =>
+      onKeyDown={(event) => {
+        const modified =
+          event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat
+        // Enter on the card itself confirms an answered step; a child's own Enter never lands here as target.
+        if (
+          event.key === 'Enter' &&
+          event.target === event.currentTarget &&
+          !event.defaultPrevented &&
+          !event.nativeEvent.isComposing &&
+          !modified
+        ) {
+          event.preventDefault()
+          if (currentAnswered) {
+            confirm(true)
+          }
+          return
+        }
         foldNativeChatQuestionOnEscape(event, isSubmitting ? undefined : collapse)
-      }
+      }}
     >
       <div className="mx-auto flex min-h-0 w-full max-w-(--chat-content-max-width) flex-col px-3 pt-2 pb-4 sm:px-4">
-        {total > 1 && !stepsInSurface ? steps() : null}
-
         {/* One 14px gutter (px-3.5) for the question, option tiles and footer, so their edges line up.
-            The box scrolls as a last resort, when a tall typed answer outgrows the pane's cap. */}
+            An opaque canvas under the translucent surface keeps the tucked queue tab from showing through. */}
         <div
-          data-native-chat-question-surface
+          ref={surfaceRef}
+          data-native-chat-dock-clip
           className={cn(
-            'flex min-h-0 flex-col overflow-y-auto rounded-[14px] border border-question-card-border bg-chat-composer-surface shadow-sm scrollbar-sleek',
+            'native-chat-question-card-surface relative z-[1] flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-primary/28 bg-chat-canvas bg-[linear-gradient(var(--color-chat-composer-surface),var(--color-chat-composer-surface))] shadow-sm',
             look?.surfaceClassName
           )}
         >
-          {/* Question and options scroll together; only the answer row stays pinned, so a short pane still reaches every option. */}
-          <div className="min-h-24 shrink overflow-y-auto scrollbar-sleek">
-            {look?.header}
-            {total > 1 && stepsInSurface ? (
-              <div className="flex items-center gap-2 px-3.5 pt-2">
-                {steps('mb-0 min-w-0 shrink')}
-                <span className="ml-auto shrink-0 pb-1 text-xs tabular-nums text-muted-foreground">
-                  {index + 1}/{total}
-                </span>
-              </div>
-            ) : null}
-            <NativeChatQuestionCardHeader
-              question={q.question}
-              isSubmitting={isSubmitting}
-              isCancelling={isCancelling}
-              onCollapse={collapse}
-              onCancel={cancel}
-              renderQuestion={look?.renderQuestion}
-            />
-
-            {/* Option rings are inset, so the scroll clip cannot cut them. */}
-            <div className="flex flex-col gap-1.5 px-3.5 pb-3">
-              {q.options.map((opt, i) => (
-                <NativeChatQuestionOption
-                  key={`${i}:${opt.label}`}
-                  badge={String(i + 1)}
-                  initialFocus={i === 0}
-                  label={opt.label}
-                  description={opt.description}
-                  preview={opt.preview}
-                  selected={(selections[index] ?? []).includes(i)}
-                  disabled={isSubmitting}
-                  onSelect={() => pickOption(i)}
-                  onEnter={() => pickOption(i, 'enter')}
-                />
-              ))}
-            </div>
-          </div>
+          <NativeChatQuestionCardHeader
+            steps={prompt.questions.map((question, i) => ({
+              // Questions never reorder within a card, so their position is their identity.
+              id: `question-${i}`,
+              header:
+                question.header ||
+                t('components.native-chat.question.step', 'Step {{value0}}', { value0: i + 1 }),
+              answered: answered(i)
+            }))}
+            index={index}
+            disabled={isSubmitting}
+            cancelDisabled={isCancelling}
+            onGoTo={goTo}
+            onCollapse={collapse}
+            onCancel={cancel}
+          />
+          {look?.header}
           <div
-            className={cn(
-              'flex shrink-0 gap-2.5 px-3.5 pb-3.5',
-              freeTextInput?.multiline ? 'items-end' : 'items-center'
-            )}
+            data-native-chat-dock-unsqueezed
+            // Short of room (fit level card), the question, options and typed answer scroll as one body,
+            // still tall enough for the question's first line and option 1, and faded while more lies below.
+            className="native-chat-question-card-body scrollbar-sleek flex min-h-0 shrink flex-col [[data-native-chat-dock-fit~=card]_&]:min-h-[calc(var(--spacing)*26)] [[data-native-chat-dock-fit~=card]_&]:overflow-y-auto"
           >
-            {questionAllowsOther ? (
+            <div
+              // The fit keeps two lines of the question (or all of a shorter one) in view.
+              data-native-chat-dock-floor-lines={2}
+              className={cn(
+                // The card's heading, one step above its body text and scaling with it.
+                'min-h-[1lh] shrink overflow-y-auto px-3.5 text-[length:calc(var(--text-sm)*15/13)] leading-snug font-semibold text-foreground scrollbar-sleek',
+                'max-h-[calc(4lh+var(--spacing)*3)]',
+                total > 1 ? 'pt-0.5' : 'pt-3',
+                // In a scrolling body the question keeps two lines (scrolling for the rest), so option 1 starts in view.
+                '[[data-native-chat-dock-fit~=card]_&]:max-h-[calc(2lh+var(--spacing)*3)] [[data-native-chat-dock-fit~=card]_&]:shrink-0'
+              )}
+            >
+              <div data-native-chat-dock-content>
+                {look?.renderQuestion ? (
+                  <div data-testid="native-chat-question-card-title">
+                    {look.renderQuestion(q.question)}
+                  </div>
+                ) : (
+                  <NativeChatQuestionText
+                    data-testid="native-chat-question-card-title"
+                    content={q.question}
+                    className="break-words [&_p]:my-0 [&_p+p]:mt-2"
+                  />
+                )}
+              </div>
+            </div>
+            {q.options.length > 0 ? (
+              // Padded so each tile's outside focus outline clears the scroll clip.
               <div
+                // The fit keeps option 1 whole before it lets the options shrink further.
+                data-native-chat-dock-floor-first-item
                 className={cn(
-                  'flex min-h-9 min-w-0 flex-1 gap-3 rounded-[10px] border border-question-option-border px-2.5 py-1.5 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-chat-focus-ring',
-                  freeTextInput?.multiline ? 'items-start' : 'items-center'
+                  'native-chat-question-card-options min-h-[calc(var(--spacing)*12)] shrink-[100] overflow-y-auto px-3.5 pt-2.5 pb-1 scrollbar-sleek',
+                  '[[data-native-chat-dock-fit~=card]_&]:min-h-0 [[data-native-chat-dock-fit~=card]_&]:shrink-0 [[data-native-chat-dock-fit~=card]_&]:overflow-visible'
                 )}
               >
-                <span
-                  className={cn(
-                    'flex size-5.5 shrink-0 items-center justify-center rounded-md border',
-                    currentTypedAnswerChosen
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-question-option-border text-muted-foreground'
-                  )}
-                >
-                  {currentTypedAnswerChosen ? (
-                    <Check className="size-3.5" strokeWidth={3} />
-                  ) : (
-                    <Pencil className="size-3.5" />
-                  )}
-                </span>
-                {/* Deliver free text verbatim as a tool result; composer slash commands and autocomplete do not apply. */}
-                {freeTextInput?.multiline ? (
-                  // The box draws the field's edge, so the bare field (not the bordered Textarea primitive) sits inside it.
-                  <ImeTextarea
-                    data-native-chat-answer-field
-                    data-native-chat-prompt-card-focus-target={fieldTakesFocus}
-                    disabled={isSubmitting}
-                    value={otherText[index]}
-                    onChange={(e) => setOther(index, e.target.value)}
-                    onClick={autoAdvance.cancel}
-                    placeholder={answerPlaceholder}
-                    className="scrollbar-sleek max-h-[12lh] min-h-16 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent [field-sizing:content] text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-default disabled:opacity-50"
-                  />
-                ) : (
-                  <ImeTextarea
-                    ref={answerInputRef}
-                    rows={1}
-                    data-native-chat-answer-field
-                    data-native-chat-prompt-card-focus-target={fieldTakesFocus}
-                    disabled={isSubmitting}
-                    value={otherText[index]}
-                    // Enter submits, so a line break becomes a space; edit in place so a mid-draft paste keeps the caret.
-                    onChange={(e) => {
-                      const field = e.target
-                      const oneLine = field.value.replace(LINE_BREAKS, ' ')
-                      if (oneLine !== field.value) {
-                        const { selectionStart, selectionEnd } = field
-                        field.value = oneLine
-                        field.setSelectionRange(selectionStart, selectionEnd)
-                      }
-                      setOther(index, oneLine)
-                    }}
-                    // Select typed text on click; tabbing toward Submit must not replace a picked option.
-                    onClick={() => {
-                      autoAdvance.cancel()
-                      if ((otherText[index] ?? '').trim().length > 0) {
-                        chooseTypedAnswer(index)
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        confirm(true)
-                      }
-                    }}
-                    placeholder={answerPlaceholder}
-                    className={cn(
-                      'scrollbar-sleek max-h-[6lh] min-w-0 flex-1 resize-none overflow-y-auto bg-transparent text-sm outline-none [field-sizing:content] placeholder:text-muted-foreground disabled:cursor-default disabled:opacity-50',
-                      currentTypedAnswerChosen || !otherText[index]
-                        ? 'text-foreground'
-                        : 'text-muted-foreground'
-                    )}
-                  />
-                )}
+                <div data-native-chat-dock-content className="flex flex-col gap-1.5">
+                  {q.options.map((opt, i) => (
+                    <NativeChatQuestionOption
+                      key={`${i}:${opt.label}`}
+                      badge={String(i + 1)}
+                      label={opt.label}
+                      description={opt.description}
+                      preview={opt.preview}
+                      selected={(selections[index] ?? []).includes(i)}
+                      disabled={isSubmitting}
+                      onSelect={() => pickOption(i)}
+                      onEnter={() => pickOption(i, 'enter')}
+                    />
+                  ))}
+                </div>
               </div>
-            ) : (
-              <span className="flex-1" />
-            )}
+            ) : null}
+            {questionAllowsOther ? (
+              <NativeChatQuestionAnswerField
+                multiline={freeTextInput?.multiline === true}
+                value={otherText[index] ?? ''}
+                chosen={currentTypedAnswerChosen}
+                disabled={isSubmitting}
+                takesFocus={q.options.length === 0}
+                placeholder={answerPlaceholder}
+                inputRef={answerInputRef}
+                onChange={(value) => setOther(index, value)}
+                onPointerChoose={() => {
+                  autoAdvance.cancel()
+                  if ((otherText[index] ?? '').trim().length > 0) {
+                    chooseTypedAnswer(index)
+                  }
+                }}
+                onEnter={() => confirm(true)}
+              />
+            ) : null}
+          </div>
+          <div
+            data-native-chat-dock-pinned
+            className="native-chat-question-card-footer relative flex shrink-0 items-center gap-2 px-3.5 pt-3 pb-3.5"
+          >
+            {index > 0 ? (
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => goTo(index - 1)}
+                className="inline-flex h-8 shrink-0 items-center rounded-lg px-3 text-[length:calc(var(--chat-ui-size,var(--text-sm))*13/14)] font-semibold text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-[1.5px] focus-visible:outline-offset-2 focus-visible:outline-foreground/45 disabled:opacity-50"
+              >
+                {t('components.native-chat.question.back', 'Back')}
+              </button>
+            ) : null}
+            <span className="flex-1" />
             <NativeChatQuestionConfirmButton
               label={
                 isSubmitting
                   ? t('components.native-chat.question.sending', 'Sending…')
-                  : CONFIRM_LABEL[confirmLabel]()
+                  : skipAndSubmit
+                    ? t('components.native-chat.question.skipAndSubmit', 'Skip and submit')
+                    : CONFIRM_LABEL[confirmLabel]()
               }
-              answered={confirmLabel !== 'skip' && !nothingToSend}
+              answered={confirmLabel !== 'skip' && !skipAndSubmit && !nothingToSend}
               enterHint={
                 currentAnswered && !isSubmitting && !q.multiSelect && !freeTextInput?.multiline
               }
-              disabled={isSubmitting || nothingToSend}
+              disabled={blocked || nothingToSend}
               onConfirm={() => confirm()}
             />
           </div>
         </div>
-
-        {total > 1 && !stepsInSurface ? (
-          <p className="mt-2 shrink-0 text-right text-xs text-muted-foreground">
-            {index + 1}/{total}
-          </p>
-        ) : null}
       </div>
     </div>
   )
