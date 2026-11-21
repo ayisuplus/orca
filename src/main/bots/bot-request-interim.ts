@@ -6,18 +6,35 @@ const LINE_MAX = 240
 // Only the end of a long turn is its closing status.
 const TAIL_MAX = 4000
 
-// A cue that the work is still ahead: queued behind something, no verdict yet, one to follow. A bare
-// "accepted" or "queued" is not one: a verdict can say "all findings accepted" or "nothing is queued".
-const PENDING =
-  /\b(?:queued (?:fifo|behind|for|until|as|at|on)|(?:in|on) (?:the |my )?queue|queue position|no (?:verdict|answer|review|findings|result)s? yet|not started yet|(?:hasn't|haven't|has not|have not) started|(?:verdict|answer|findings|result|review)s? (?:will )?(?:follows?|comes? back|to follow))\b/i
+// Only the closing status counts: a full answer that mentions a queue earlier is still an answer.
+const CLOSING_SENTENCES = 3
+
+// The bot's own words that this request waits its turn: queued behind something or as a numbered
+// item, its place in the queue, or no verdict yet with one to follow. A sentence that only mentions a
+// queue ("messages are queued for delivery", "Queued FIFO.") is not one.
+const PENDING = new RegExp(
+  [
+    String.raw`\bqueued (?:fifo )?behind\b`,
+    String.raw`\bqueued (?:it |this |your \w+ )?as (?:item |#|number |no\.? ?)\d+`,
+    String.raw`\b(?:i|we)(?:'ve| have)? queued (?:it|this|your)\b`,
+    String.raw`\b(?:your|this|the) (?:request|review|question|handoff|ask|job) (?:is|was|has been|'s) (?:now )?(?:queued|in (?:the |my )?queue)\b`,
+    String.raw`\b(?:\d+(?:st|nd|rd|th)|next) in (?:the |my )?queue\b`,
+    String.raw`\bqueue position (?:is )?#?\d+`,
+    String.raw`\bno verdict yet\b`,
+    String.raw`\bno review (?:has )?started\b`,
+    String.raw`\bverdict (?:will )?(?:follows?|to follow)\b`
+  ].join('|'),
+  'i'
+)
 
 // A turn that says it can't take the request is no pending one, even if it also says "queued".
 const REFUSAL =
   /\b(?:can(?:no|')t|could(?:n't| not)|won't|will not|unable to) (?:take|do|handle|accept|review|answer|help)\b|\bdeclin(?:e|ed|ing)\b|\brefus(?:e|ed|ing)\b/i
 
 // A verdict written in chat (and not mailed) is an answer the sender never got, not a pending one.
-const VERDICT = /\bverdict\s*:|\bno (?:P[0-3] )?findings\b|\bnothing (?:is )?queued\b/i
-const VERDICT_WORD = /\b(?:PASS(?:ED)?|CHANGES REQUIRED|LGTM|APPROVED)\b/
+const VERDICT = /\bverdict\s*:|\bnothing (?:is )?queued\b|\b(?:lgtm|approved|changes required)\b/i
+// Uppercase only: "tests passed" is no verdict.
+const VERDICT_WORD = /\bPASS(?:ED)?\b/
 
 /** The line saying the request is taken and pending, cut for a notice; null for any other ending. */
 export function botRequestInterimLine(text: string): string | null {
@@ -35,6 +52,8 @@ export function botRequestInterimLine(text: string): string | null {
   const line = tail
     .split(/\n+|(?<=[.!?])\s+/)
     .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(-CLOSING_SENTENCES)
     .find((part) => PENDING.test(part))
   if (!line) {
     return null

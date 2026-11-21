@@ -6,14 +6,18 @@ import { resolve } from 'node:path'
 import { isPathInsideOrEqual } from '../../../../../../shared/file-access/cross-platform-path'
 import type { SendRecipientWarning } from './recipient-routing'
 
-// A long body is checked for its first few paths only: the warning names a handful at most.
+// A long body is checked for its first few paths only: the warning names a handful at most, and a
+// pasted diff or page holds thousands of slashes ("a / b", "</div>"), each counted toward the cap.
 const STARTS_MAX = 10
+const MATCHES_MAX = 200
 // A folder name can hold spaces ("Application Support"): each path is also tried this many words on.
 const EXTRA_WORDS_MAX = 4
 const NAMED_MAX = 3
 const LINE_MAX = 1024
 const PATH_START = /(?:^|[\s"'`(<[=])((?:~|[A-Za-z]:)?[\\/])/g
 const TRAILING = /[.,;:!?"'`)>\]]+$/
+// "file.ts:42:7" names file.ts.
+const LINE_NUMBER = /(?::\d+){1,2}$/
 
 /** Folders that are this computer's own: another computer's paths there are some other user's or
  *  temporary. Paths elsewhere (/usr, /etc, a checkout both share) may well exist there too. */
@@ -26,7 +30,11 @@ function candidates(body: string): string[][] {
   const home = homedir()
   const roots = localRoots()
   const starts: string[][] = []
+  let matches = 0
   for (const match of body.matchAll(PATH_START)) {
+    if (++matches > MATCHES_MAX) {
+      break
+    }
     const from = match.index + match[0].length - match[1].length
     // Only the rest of this line, bounded: a long body (a pasted diff) has many path-like starts.
     const end = body.indexOf('\n', from)
@@ -38,10 +46,16 @@ function candidates(body: string): string[][] {
           .slice(0, count + 1)
           .join(' ')
           .replace(TRAILING, '')
+          .replace(LINE_NUMBER, '')
       )
       .filter((raw) => raw.length > 1)
       .map((raw) => resolve(raw.startsWith('~') ? `${home}${raw.slice(1)}` : raw))
-      .filter((path) => roots.some((root) => isPathInsideOrEqual(root, path)))
+      // Inside one of them, never one of them (or above it): "~/" or the temp folder names no file.
+      .filter(
+        (path) =>
+          roots.some((root) => isPathInsideOrEqual(root, path)) &&
+          !roots.some((root) => isPathInsideOrEqual(path, root))
+      )
     if (readings.length > 0) {
       starts.push(readings)
     }

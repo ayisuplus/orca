@@ -33,6 +33,36 @@ describe('a turn that ends on an interim status', () => {
     ).toBeNull()
   })
 
+  it("reads the bot's own words that it queued the request as pending", () => {
+    expect(botRequestInterimLine("I've queued it as item 72.")).toBe("I've queued it as item 72.")
+    expect(botRequestInterimLine('Your review is queued behind item 76.')).toBe(
+      'Your review is queued behind item 76.'
+    )
+    expect(botRequestInterimLine('Status: queued FIFO on the M4 seats; no review started.')).toBe(
+      'Status: queued FIFO on the M4 seats; no review started.'
+    )
+    expect(
+      botRequestInterimLine('One seat started. Final verdict will follow when it reports.')
+    ).toBe('Final verdict will follow when it reports.')
+  })
+
+  it('reads an answer that only mentions a queue as no interim status', () => {
+    for (const answer of [
+      'Here is the answer: messages are queued for delivery on the next poll.',
+      'The answer to your question: items on the queue are processed FIFO.',
+      'Findings: P2 - peer mail queued until reconnect is never flushed',
+      'The bug is in the queue position math in send-queue.ts',
+      "job hasn't started yet because the runner is offline",
+      'Results to follow? No - that was all.',
+      'Queued FIFO.',
+      'lgtm. Queued behind item 3 for the merge train.',
+      'Approved; queued behind the release.',
+      'Queued behind item 4. Here is the full answer you asked for. It covers both parts. That is all.'
+    ]) {
+      expect(botRequestInterimLine(answer)).toBeNull()
+    }
+  })
+
   it('reads a refusal with a typographic apostrophe as one', () => {
     expect(botRequestInterimLine('I can’t take this; it is queued elsewhere.')).toBeNull()
   })
