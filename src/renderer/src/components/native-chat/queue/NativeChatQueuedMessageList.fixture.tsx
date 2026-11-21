@@ -25,17 +25,17 @@ const sender = (name: string): AgentMessageSource => ({
 const MESSAGES: Pick<QueuedMessageCard, 'text' | 'from'>[] = [
   {
     text: 'Draft 3 is published with the interactive mock; the share link has the new states.',
-    from: sender('Design: ask cards')
+    from: sender('Docs helper')
   },
   { text: 'Can we ship the Slack card this week?' },
   {
-    text: 'Worker stopped without reporting after the second code round.',
-    from: sender('Eng - Reviewer')
+    text: 'The build stopped without a report after the second step.',
+    from: sender('Code reviewer')
   },
   { text: 'Also check the light theme before you send the mockup.' },
   {
-    text: 'C3 verdict: pass, one follow-up about the placeholder.',
-    from: sender('Eng - Reviewer')
+    text: 'Review passed, with one follow-up about the placeholder.',
+    from: sender('Code reviewer')
   },
   { text: 'When that is done, rebase on main and push.' }
 ]
@@ -118,6 +118,26 @@ const QUESTIONS: AskPrompt['questions'] = [
     ]
   }
 ]
+
+// Worst-case words: a question that wraps for several lines in the narrowest pane, and long options.
+const LONG_QUESTION: AskPrompt['questions'][number] = {
+  header: 'Notification rules for long-running background jobs',
+  question:
+    'When a background job that was started from a thread finishes after the person has already left the thread, and the job produced files that need a review, where should the result and its review request be posted so nobody misses it?',
+  multiSelect: false,
+  options: [
+    {
+      label:
+        'Post the result in the original thread and mention the person who started it (Recommended)',
+      description:
+        'The thread keeps the whole history, and the mention reaches the person wherever they are.'
+    },
+    {
+      label: 'Send the result to the person directly and link back to the thread',
+      description: 'Private first; the thread only gets a short note.'
+    }
+  ]
+}
 
 function Pane({
   queue,
@@ -306,4 +326,89 @@ export const withRealComposer = defineFixture({
 export const onRealComposer = defineFixture({
   width: 560,
   render: () => <RealComposerPane question={false} />
+})
+
+export const wide = defineFixture({
+  width: 1100,
+  render: () => <Pane queue={controller(cards(6))} question={{ questions: QUESTIONS }} />
+})
+
+export const narrowLongQuestion = defineFixture({
+  width: 380,
+  render: () => (
+    <Pane queue={controller(cards(6, 1))} question={{ questions: [LONG_QUESTION, ...QUESTIONS] }} />
+  )
+})
+
+export const narrowTinyLongQuestion = defineFixture({
+  width: 380,
+  render: () => (
+    <Pane
+      queue={controller(cards(6))}
+      question={{ questions: [LONG_QUESTION, ...QUESTIONS] }}
+      height={312}
+    />
+  )
+})
+
+// Where focus lands when a focused "+N more" goes away: the pane grows, or the question closes.
+type FocusHandoffControls = {
+  setHeight: (height: number) => void
+  setQuestion: (on: boolean) => void
+}
+const focusHandoff: { controls?: FocusHandoffControls } = {}
+
+function FocusHandoffPane({
+  height: initialHeight,
+  question: initialQuestion
+}: {
+  height: number
+  question: boolean
+}) {
+  const [height, setHeight] = useState(initialHeight)
+  const [question, setQuestion] = useState(initialQuestion)
+  focusHandoff.controls = { setHeight, setQuestion }
+  return (
+    <Pane
+      queue={controller(cards(6))}
+      question={question ? { questions: QUESTIONS } : undefined}
+      height={height}
+    />
+  )
+}
+
+async function handOffFocus(frame: HTMLElement, change: (controls: FocusHandoffControls) => void) {
+  const frames = async (count: number) => {
+    for (let i = 0; i < count; i++) {
+      await new Promise(requestAnimationFrame)
+    }
+  }
+  await frames(4)
+  const more = Array.from(frame.querySelectorAll('button')).find((b) =>
+    (b.textContent ?? '').endsWith('more')
+  )
+  more?.focus({ focusVisible: true })
+  const before = more ? `"${more.textContent}" focused` : 'no "+N more" shown'
+  if (focusHandoff.controls) {
+    change(focusHandoff.controls)
+  }
+  await frames(6)
+  const active = document.activeElement
+  const name = active?.getAttribute('aria-label') || active?.textContent?.trim() || active?.tagName
+  const readout = document.createElement('p')
+  readout.className = 'px-4 py-2 font-mono text-xs text-foreground'
+  readout.textContent = `${before} → after: focus on ${active === document.body ? 'the page (lost)' : `"${name}"`}`
+  frame.appendChild(readout)
+}
+
+export const focusAfterPaneGrows = defineFixture({
+  width: 560,
+  render: () => <FocusHandoffPane height={330} question={false} />,
+  interact: (frame) => handOffFocus(frame, (controls) => controls.setHeight(760))
+})
+
+export const focusAfterQuestionCloses = defineFixture({
+  width: 560,
+  render: () => <FocusHandoffPane height={760} question />,
+  interact: (frame) => handOffFocus(frame, (controls) => controls.setQuestion(false))
 })
