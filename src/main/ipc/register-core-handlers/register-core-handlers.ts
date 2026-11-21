@@ -44,7 +44,6 @@ import { setAgentBrowserBridgeRef, registerBrowserHandlers } from '../browser/br
 import { setTrustedBrowserRendererWebContentsId } from '../browser/browser-renderer-trust'
 import { registerSessionHandlers } from '../session'
 import { registerSettingsHandlers } from '../settings/settings'
-import { registerWslHostAwakeHandlers } from '../../power/wsl-host-awake-ipc'
 import { registerDiagnosticsHandlers } from '../diagnostics'
 import { registerSkillsHandlers } from '../skills/skills'
 import { registerSkillDeleteIpcHandlers } from '../skill-delete/handlers'
@@ -182,9 +181,6 @@ export async function registerCoreHandlers(
     registerTerminalRenderDesyncEvidenceHandler()
     registerComputerUsePermissionHandlers()
     registerSettingsHandlers(store, agentAwakeService)
-    if (agentAwakeService) {
-      registerWslHostAwakeHandlers(agentAwakeService)
-    }
     registerSkillsHandlers(store, runtime)
     registerSkillDeleteIpcHandlers(store, runtime)
     if (automations) {

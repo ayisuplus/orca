@@ -12,7 +12,6 @@ import {
   setRuntimeGraphSyncEnabled
 } from './graph-sync-scheduler'
 import { useAppStore } from '../../store/index'
-import { startWslHostAwakePublication } from '../agent-status/wsl-host-awake-publication'
 import { isPairedWebClientWindow } from '../../app-shell/chrome/desktop-window-chrome'
 
 /** Keeps the mobile runtime graph republished as the store's session-visible state changes. */
@@ -79,15 +78,9 @@ export function useRuntimeGraphSync(): void {
       workspaceSessionReady && !isPairedWebClientWindow()
         ? startRendererStatusPublication(useAppStore, scheduleRuntimeGraphSync)
         : undefined
-    const setWslHostStatuses = window.api.agentAwake?.setWslHostStatuses
-    const stopWslHostAwakePublication =
-      workspaceSessionReady && !isPairedWebClientWindow() && setWslHostStatuses
-        ? startWslHostAwakePublication(useAppStore, setWslHostStatuses)
-        : undefined
     setRuntimeGraphSyncEnabled(workspaceSessionReady)
     return () => {
       stopStatusPublication?.()
-      stopWslHostAwakePublication?.()
       setRuntimeGraphSyncEnabled(false)
     }
   }, [workspaceSessionReady])
