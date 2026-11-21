@@ -7,6 +7,7 @@ import type {
 import type { AgentInterruptInferenceRequest } from '../../../shared/agent-status/lifecycle/agent-interrupt-intent'
 import type { AgentQuestionAnsweredInferenceRequest } from '../../../shared/agent-status/lifecycle/agent-question-answered-intent'
 import type { ComputerAwakeStatus } from '../../../shared/app-lifecycle/computer-awake-mode'
+import type { WslHostAwakeStatus } from '../../../shared/agent-status/wsl-host-awake-status'
 import type { AgentListPublication } from '../../../shared/agent-status/presentation/agent-list-status'
 
 export type AgentStatusApi = {
@@ -53,4 +54,6 @@ export type AgentStatusApi = {
 export type AgentAwakeApi = {
   getStatus: () => Promise<ComputerAwakeStatus>
   onChanged: (callback: (status: ComputerAwakeStatus) => void) => () => void
+  /** Agents working on this machine's WSL hosts; they never reach the local hook server. */
+  setWslHostStatuses?: (statuses: WslHostAwakeStatus[]) => void
 }
