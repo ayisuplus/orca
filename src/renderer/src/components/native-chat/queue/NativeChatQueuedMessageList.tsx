@@ -57,6 +57,9 @@ export function NativeChatQueuedMessageList({
   const [dragging, setDragging] = useState(false)
   // A row holding focus keeps the list from folding for room; the header's own controls do not.
   const [listFocused, setListFocused] = useState(false)
+  // A row's open menu holds focus in its portal; the list must stay shown so focus can come back to the row.
+  const [rowMenuOpen, setRowMenuOpen] = useState(false)
+  const holdsFocus = listFocused || rowMenuOpen
   // Collapsing is local to this queue's run: once it empties, the next card shows open.
   if (cards.length === 0 && (!expanded || userOpen || showAll)) {
     setExpanded(true)
@@ -71,7 +74,7 @@ export function NativeChatQueuedMessageList({
   const editing = controller.editor !== undefined
   const shownOpenIds = cards.filter((card) => openIds.has(card.messageId))
   const fitFolded =
-    useNativeChatDockFitToken(regionRef, 'queue') && !userOpen && !editing && !listFocused
+    useNativeChatDockFitToken(regionRef, 'queue') && !userOpen && !editing && !holdsFocus
   const listShown = expanded && !fitFolded
   // Rows are whole: the list's cap is a row count in the chat's own spacing, never a pixel total.
   const rowCap =
@@ -80,10 +83,13 @@ export function NativeChatQueuedMessageList({
   const offersMore = room.rowCap < NATIVE_CHAT_QUEUE_FULL_ROWS && (showAll || hiddenCount > 0)
   const newest = cards.at(-1)
   const steerableHead = controller.queueCapable ? headSteerableQueuedMessageCard(cards) : null
-  const attentionCard = !listShown ? cards.find(queuedMessageCardNeedsAttention) : undefined
-  const attentionCaption = attentionCard
-    ? queuedMessageCardCaption(attentionCard, agentName, statedFailures, t)
-    : null
+  // The first attention card that states a failure: an unconfirmed one has no caption and must not hide a later Retry.
+  const attentionCaption = listShown
+    ? null
+    : (cards
+        .filter(queuedMessageCardNeedsAttention)
+        .map((card) => queuedMessageCardCaption(card, agentName, statedFailures, t))
+        .find((caption) => caption !== null) ?? null)
   const listRef = useRef<HTMLUListElement>(null)
   const newestIsPersons = newest !== undefined && !newest.from
   const shownIds = useRef<ReadonlySet<string> | null>(null)
@@ -171,7 +177,7 @@ export function NativeChatQueuedMessageList({
       data-native-chat-queue=""
       data-user-open={userOpen || undefined}
       data-editing={editing || undefined}
-      data-list-focus={listFocused || undefined}
+      data-list-focus={holdsFocus || undefined}
       className={cn(
         cards.length > 0 &&
           // A tab tucked 12px behind the next input surface or message box (its 8px top padding plus 12px).
@@ -262,6 +268,7 @@ export function NativeChatQueuedMessageList({
                     }
                     editAttachTo={editAttachTo}
                     editDisabled={controller.editor !== undefined}
+                    onMenuOpenChange={setRowMenuOpen}
                   />
                 )}
               />

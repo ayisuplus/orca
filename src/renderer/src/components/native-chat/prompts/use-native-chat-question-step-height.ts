@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react'
-import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
+import { usePrefersReducedMotion } from '@/hooks/theme/usePrefersReducedMotion'
 import { forceLayoutReflow } from '@/lib/overlay-interaction/force-layout-reflow'
 import {
   invalidateNativeChatDockFit,

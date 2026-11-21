@@ -34,11 +34,7 @@ import {
   queuedMessageReturnedNotice,
   type QueuedMessageCard
 } from '../../../../../shared/agent-session/view/structured-agent-session-queued-cards'
-import { NativeChatAgentMessageSenders } from '@/components/native-chat/messages/agent-senders/NativeChatAgentMessageSenders'
-import {
-  NativeChatTypedByQueuedLine,
-  NativeChatTypedByTag
-} from '@/components/native-chat/NativeChatTypedByTag'
+import { NativeChatQueuedMessageSender } from '@/components/native-chat/queue/NativeChatQueuedMessageSender'
 import { NativeChatPendingIcon } from '@/components/native-chat/queue/NativeChatPendingIcon'
 import type { QueuedMessagesPendingAction } from '@/components/native-chat/queue/use-structured-agent-session-queued-messages'
 import type { AgentSessionFailureFact } from '../../../../../shared/agent-session/failures/agent-session-failure'
@@ -139,6 +135,7 @@ export function NativeChatQueuedMessageCard({
   editor,
   editAttachTo,
   editDisabled = false,
+  onMenuOpenChange,
   drag
 }: {
   card: QueuedMessageCard
@@ -167,6 +164,8 @@ export function NativeChatQueuedMessageCard({
   editAttachTo?: QueuedEditAttachTarget
   /** Another card in this pane is being edited. */
   editDisabled?: boolean
+  /** The row's menu opened, or closed and handed focus back: the list keeps showing in between. */
+  onMenuOpenChange?: (open: boolean) => void
   drag?: QueuedMessageDragPresentation
 }): React.JSX.Element {
   const t = useTranslate()
@@ -193,17 +192,7 @@ export function NativeChatQueuedMessageCard({
         <NativeChatQueuedMessageComposer
           editor={editor}
           attachTo={editAttachTo}
-          sender={
-            card.from ? (
-              <NativeChatAgentMessageSenders
-                from={card.from}
-                chatWorktreeId={chatWorktreeId}
-                queued
-              />
-            ) : card.typedByOther ? (
-              <NativeChatTypedByQueuedLine typist={card.typedByOther} />
-            ) : null
-          }
+          sender={<NativeChatQueuedMessageSender card={card} chatWorktreeId={chatWorktreeId} />}
           images={card.images ? <QueuedMessageImageCount images={card.images} /> : null}
         />
       </li>
@@ -306,15 +295,9 @@ export function NativeChatQueuedMessageCard({
         >
           {caption}
         </span>
-      ) : card.from ? (
-        <span className="max-w-[20%] min-w-0 shrink-0 @max-[460px]:hidden">
-          <NativeChatAgentMessageSenders from={card.from} chatWorktreeId={chatWorktreeId} inline />
-        </span>
-      ) : card.typedByOther ? (
-        <span className="max-w-[20%] min-w-0 shrink-0 @max-[460px]:hidden">
-          <NativeChatTypedByTag typist={card.typedByOther} />
-        </span>
-      ) : null}
+      ) : (
+        <NativeChatQueuedMessageSender card={card} chatWorktreeId={chatWorktreeId} inline />
+      )}
       {card.images ? <QueuedMessageImageCount images={card.images} /> : null}
       {/* Nothing acts on a send still on its way: the host holds no card for it yet. */}
       {card.hold === 'sending' ? null : (
@@ -381,7 +364,13 @@ export function NativeChatQueuedMessageCard({
             </Tooltip>
           </span>
           {/* The menu portals, so the list's scroll box never clips it. */}
-          <DropdownMenu>
+          <DropdownMenu
+            onOpenChange={(open) => {
+              if (open) {
+                onMenuOpenChange?.(true)
+              }
+            }}
+          >
             <span className="inline-flex opacity-70 transition-opacity focus-within:opacity-100 hover:opacity-100 has-[[data-state=open]]:opacity-100">
               <DropdownMenuTrigger asChild>
                 <Button
@@ -398,7 +387,11 @@ export function NativeChatQueuedMessageCard({
                 </Button>
               </DropdownMenuTrigger>
             </span>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent
+              align="end"
+              // Released only now: Radix returns focus to the trigger right after this, while the row still shows.
+              onCloseAutoFocus={() => onMenuOpenChange?.(false)}
+            >
               {/* The host refuses these edits: a command would become a message, a run the owner's words. */}
               {!card.notEditable && onEdit ? (
                 <DropdownMenuItem disabled={editDisabled} onSelect={onEdit}>

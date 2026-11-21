@@ -18,6 +18,17 @@ vi.mock('@/components/ui/tooltip', () => ({
   TooltipTrigger: ({ children }: React.PropsWithChildren) => children,
   TooltipContent: () => null
 }))
+// The ⋯ menu portals in the app; inline here so its items can be read.
+vi.mock('@/components/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  DropdownMenuTrigger: ({ children }: React.PropsWithChildren) => children,
+  DropdownMenuContent: ({ children }: React.PropsWithChildren) => <div role="menu">{children}</div>,
+  DropdownMenuItem: ({ children }: React.PropsWithChildren) => (
+    <button type="button" role="menuitem">
+      {children}
+    </button>
+  )
+}))
 
 afterEach(cleanup)
 
@@ -33,7 +44,7 @@ function queued(
   }
 }
 
-function moreActions(message: AgentSessionQueuedMessage): HTMLElement | null {
+function editItem(message: AgentSessionQueuedMessage): HTMLElement | null {
   const [card] = projectQueuedMessageCards([message], [], { agentWorking: true })
   const view = render(
     <NativeChatQueuedMessageCard
@@ -46,11 +57,12 @@ function moreActions(message: AgentSessionQueuedMessage): HTMLElement | null {
       onEdit={() => {}}
     />
   )
-  return view.queryByRole('button', { name: 'More actions' })
+  // ⋯ always holds Show full message and Delete; only Edit depends on the host accepting the edit.
+  return view.queryByRole('menuitem', { name: 'Edit message' })
 }
 
 it("offers Edit on the owner's queued message but never on an automation's queued run", () => {
-  expect(moreActions(queued('mine', {}))).not.toBeNull()
+  expect(editItem(queued('mine', {}))).not.toBeNull()
   cleanup()
-  expect(moreActions(queued('run', { origin: 'automation-run' }))).toBeNull()
+  expect(editItem(queued('run', { origin: 'automation-run' }))).toBeNull()
 })

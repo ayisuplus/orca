@@ -19,6 +19,7 @@ import { NativeChatCodeBlock } from '../markdown/code/NativeChatCodeBlock'
 import type { ChatApproval } from '../../../../../shared/native-chat/input/native-chat-interactive-prompt'
 import { NativeChatPromptCollapseToggle } from './NativeChatPromptCollapse'
 import { useNativeChatPromptCardFocus } from './use-native-chat-prompt-card-focus'
+import { useNativeChatDockRefit } from '../pane/dock/use-native-chat-dock-fit'
 import { NativeChatUrlTarget, openUrlRequestPage } from './NativeChatUrlRequest'
 
 export type NativeChatApprovalCardProps = {
@@ -116,6 +117,15 @@ export function NativeChatApprovalCard({
     approval.detail
   )
   useNativeChatPromptCardFocus(cardRef, shouldFocus && !stacked)
+  // The dock observes no box that grows with this capped content: a new countdown or detail asks it to re-fit.
+  useNativeChatDockRefit(cardRef, !stacked, [
+    countdown,
+    approval.description,
+    approval.decisionReason,
+    neededPath,
+    approval.subject,
+    approval.detail
+  ])
   const escape = onCancel ?? (isSubmitting ? undefined : onCollapse)
 
   return (

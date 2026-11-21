@@ -19,10 +19,11 @@ import { useNativeChatQuestionStepHeight } from './use-native-chat-question-step
 import {
   useReportNativeChatQuestionDraft,
   foldNativeChatQuestionOnEscape,
+  confirmNativeChatQuestionOnCardEnter,
   type NativeChatQuestionCardDraft,
   type NativeChatQuestionCardLook
 } from './NativeChatQuestionCardParts'
-import { invalidateNativeChatDockFit } from '../pane/dock/native-chat-dock-fit'
+import { useNativeChatDockRefit } from '../pane/dock/use-native-chat-dock-fit'
 import type { AgentJournalFreeTextInput } from '../../../../../shared/agent-session/journal/agent-session-journal-types'
 import {
   askAcceptsEmptyAnswer,
@@ -108,11 +109,7 @@ export function NativeChatQuestionCard({
   useLayoutEffect(() => {
     blockedRef.current = blocked
   }, [blocked])
-  useLayoutEffect(() => {
-    if (cardRef.current) {
-      invalidateNativeChatDockFit(cardRef.current)
-    }
-  }, [index])
+  useNativeChatDockRefit(cardRef, true, [index])
 
   const total = prompt.questions.length
   const isLast = index === total - 1
@@ -174,8 +171,7 @@ export function NativeChatQuestionCard({
   const nothingToSend =
     !onCancel && isLast && prompt.questions.some((_, i) => !answerFor(i) && !acceptsEmpty(i))
   const confirmLabel = askConfirmLabel(currentAnswered, isLast, anyAnswered || nothingToSend)
-  const skipAndSubmit =
-    confirmLabel === 'submit' && !currentAnswered && total > 1 && !nothingToSend
+  const skipAndSubmit = confirmLabel === 'submit' && !currentAnswered && total > 1 && !nothingToSend
   const currentTypedAnswerChosen = typedAnswerChosen(index)
 
   const submitAll = (sel: number[][], oth: string[]): void => {
@@ -304,23 +300,9 @@ export function NativeChatQuestionCard({
       className={cn('flex min-h-0 shrink flex-col bg-chat-pane outline-none', look?.frameClassName)}
       aria-busy={isSubmitting}
       onKeyDown={(event) => {
-        const modified =
-          event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat
-        // Enter on the card itself confirms an answered step; a child's own Enter never lands here as target.
-        if (
-          event.key === 'Enter' &&
-          event.target === event.currentTarget &&
-          !event.defaultPrevented &&
-          !event.nativeEvent.isComposing &&
-          !modified
-        ) {
-          event.preventDefault()
-          if (currentAnswered) {
-            confirm(true)
-          }
-          return
+        if (!confirmNativeChatQuestionOnCardEnter(event, currentAnswered, () => confirm(true))) {
+          foldNativeChatQuestionOnEscape(event, isSubmitting ? undefined : collapse)
         }
-        foldNativeChatQuestionOnEscape(event, isSubmitting ? undefined : collapse)
       }}
     >
       <div className="mx-auto flex min-h-0 w-full max-w-(--chat-content-max-width) flex-col px-3 pt-2 pb-4 sm:px-4">

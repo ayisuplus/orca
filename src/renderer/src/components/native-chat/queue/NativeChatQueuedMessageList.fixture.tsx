@@ -7,7 +7,7 @@ import { NativeChatQueuedMessageList } from './NativeChatQueuedMessageList'
 import { NativeChatComposer } from '../composer/NativeChatComposer'
 import type { StructuredAgentSessionQueuedMessagesController } from './use-structured-agent-session-queued-messages'
 import type { QueuedMessageCard } from '../../../../../shared/agent-session/view/structured-agent-session-queued-cards'
-import type { AgentMessageSource } from '../../../../../shared/agent-session/agent-session-message-source'
+import type { AgentMessageSource } from '../../../../../shared/agent-session/journal/agent-session-message-source'
 import { QUEUED_MESSAGE_PAUSED_SEND_FAILED } from '../../../../../shared/agent-session/requests/agent-session-queued-message-wire'
 import type { AskPrompt } from '../../../../../shared/native-chat/input/questions/native-chat-ask-types'
 

@@ -1,8 +1,9 @@
-import { useCallback, useLayoutEffect, useSyncExternalStore, type RefObject } from 'react'
+import { useCallback, useLayoutEffect, useRef, useSyncExternalStore, type RefObject } from 'react'
 import {
   NATIVE_CHAT_DOCK_FIT_ATTRIBUTE,
   NATIVE_CHAT_DOCK_INVALIDATE_EVENT,
   NATIVE_CHAT_DOCK_OBSERVED_SELECTOR,
+  invalidateNativeChatDockFit,
   runNativeChatDockFit
 } from './native-chat-dock-fit'
 
@@ -129,4 +130,25 @@ export function useNativeChatDockFitToken(
         .includes(token),
     () => false
   )
+}
+
+/** Ask the dock to re-fit when any of `inputs` changes (a new step, a countdown line): a change that no
+ *  observed box shows. Compared by identity, so an unchanged render costs no fit pass. */
+export function useNativeChatDockRefit(
+  ref: RefObject<HTMLElement | null>,
+  active: boolean,
+  inputs: readonly unknown[]
+): void {
+  const last = useRef<readonly unknown[] | null>(null)
+  useLayoutEffect(() => {
+    const previous = last.current
+    last.current = inputs
+    const changed =
+      previous === null ||
+      previous.length !== inputs.length ||
+      inputs.some((input, i) => !Object.is(input, previous[i]))
+    if (active && changed && ref.current) {
+      invalidateNativeChatDockFit(ref.current)
+    }
+  })
 }

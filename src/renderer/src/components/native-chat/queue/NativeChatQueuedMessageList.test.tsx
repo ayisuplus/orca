@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import React from 'react'
+import type * as ReactModule from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -9,21 +10,46 @@ import type { StructuredAgentSessionQueuedMessagesController } from './use-struc
 import type { QueuedMessageCard } from '../../../../../shared/agent-session/view/structured-agent-session-queued-cards'
 import { QUEUED_MESSAGE_PAUSED_SEND_FAILED } from '../../../../../shared/agent-session/requests/agent-session-queued-message-wire'
 
-// The ⋯ menu portals in the app; inline here so its items can be pressed.
-vi.mock('@/components/ui/dropdown-menu', () => ({
-  DropdownMenu: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
-  DropdownMenuTrigger: ({ children }: React.PropsWithChildren) => children,
-  DropdownMenuContent: ({ children }: React.PropsWithChildren) => <div role="menu">{children}</div>,
-  DropdownMenuItem: ({
-    children,
-    onSelect,
-    disabled
-  }: React.PropsWithChildren<{ onSelect?: () => void; disabled?: boolean }>) => (
-    <button type="button" role="menuitem" disabled={disabled} onClick={() => onSelect?.()}>
-      {children}
-    </button>
-  )
-}))
+// The ⋯ menu portals in the app; inline here so its items can be pressed. Its trigger reports the open,
+// and "Close menu" stands in for Radix's close, which calls onCloseAutoFocus before refocusing the trigger.
+vi.mock('@/components/ui/dropdown-menu', async () => {
+  const { createContext, useContext } = await vi.importActual<typeof ReactModule>('react')
+  const OpenChange = createContext<((open: boolean) => void) | undefined>(undefined)
+  return {
+    DropdownMenu: ({
+      children,
+      onOpenChange
+    }: React.PropsWithChildren<{ onOpenChange?: (open: boolean) => void }>) => (
+      <OpenChange.Provider value={onOpenChange}>
+        <div>{children}</div>
+      </OpenChange.Provider>
+    ),
+    DropdownMenuTrigger: function Trigger({ children }: React.PropsWithChildren) {
+      const onOpenChange = useContext(OpenChange)
+      return <span onClickCapture={() => onOpenChange?.(true)}>{children}</span>
+    },
+    DropdownMenuContent: ({
+      children,
+      onCloseAutoFocus
+    }: React.PropsWithChildren<{ onCloseAutoFocus?: (event: Event) => void }>) => (
+      <div role="menu">
+        {children}
+        <button type="button" onClick={() => onCloseAutoFocus?.(new Event('close'))}>
+          Close menu
+        </button>
+      </div>
+    ),
+    DropdownMenuItem: ({
+      children,
+      onSelect,
+      disabled
+    }: React.PropsWithChildren<{ onSelect?: () => void; disabled?: boolean }>) => (
+      <button type="button" role="menuitem" disabled={disabled} onClick={() => onSelect?.()}>
+        {children}
+      </button>
+    )
+  }
+})
 
 afterEach(() => {
   cleanup()
@@ -230,4 +256,35 @@ it('moves focus into the queue when a focused +N more goes away with the questio
   await cleanupRender(queue)
   expect(screen.queryByRole('button', { name: /more$/ })).toBeNull()
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Queued message 1' }))
+})
+
+it('names a later send failure in a folded header when an unconfirmed card comes first', () => {
+  renderQueue(
+    controller([
+      card(1, { state: 'returned', hold: 'returned', returnedRejection: { kind: 'unconfirmed' } }),
+      card(2, { hold: 'paused', pausedReason: QUEUED_MESSAGE_PAUSED_SEND_FAILED })
+    ])
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Queued messages' }))
+  expect(screen.getByText("Couldn't send — press Send to retry.")).toBeTruthy()
+})
+
+it('keeps a list folded for room open while a row menu holds focus, so focus returns to the row', async () => {
+  renderQueue(controller([card(1), card(2)]))
+  const root = document.querySelector('[data-native-chat-root]')!
+  await act(async () => root.setAttribute('data-native-chat-dock-fit', 'queue'))
+  const fold = screen.getByRole('button', { name: 'Queued messages' })
+  const [trigger] = screen.getAllByRole('button', { name: 'More actions' })
+  act(() => trigger!.focus())
+  fireEvent.click(trigger!)
+  // The open menu's portal takes focus, outside the list.
+  const portal = document.body.appendChild(document.createElement('button'))
+  act(() => portal.focus())
+  expect(fold.getAttribute('aria-expanded')).toBe('true')
+  // Closing hands focus back to the still-shown trigger.
+  fireEvent.click(screen.getAllByRole('button', { name: 'Close menu' })[0]!)
+  act(() => trigger!.focus())
+  expect(document.activeElement).toBe(trigger)
+  expect(fold.getAttribute('aria-expanded')).toBe('true')
+  portal.remove()
 })

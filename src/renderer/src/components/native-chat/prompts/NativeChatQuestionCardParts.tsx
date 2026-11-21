@@ -1,4 +1,4 @@
-// Pieces of the question card: another surface's look and draft for it, and Escape to fold it.
+// Pieces of the question card: another surface's look and draft for it, Enter on the card, and Escape to fold it.
 import { useEffect, useEffectEvent } from 'react'
 import { isEditableTarget } from '@/lib/text-input/focus/editable-target'
 
@@ -48,4 +48,28 @@ export function foldNativeChatQuestionOnEscape(
     event.stopPropagation()
     collapse()
   }
+}
+
+/** Enter on the card itself confirms an answered step; a child's own Enter never lands here as target.
+ *  True when it took the key. */
+export function confirmNativeChatQuestionOnCardEnter(
+  event: React.KeyboardEvent,
+  answered: boolean,
+  confirm: () => void
+): boolean {
+  const modified = event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat
+  if (
+    event.key !== 'Enter' ||
+    event.target !== event.currentTarget ||
+    event.defaultPrevented ||
+    event.nativeEvent.isComposing ||
+    modified
+  ) {
+    return false
+  }
+  event.preventDefault()
+  if (answered) {
+    confirm()
+  }
+  return true
 }
