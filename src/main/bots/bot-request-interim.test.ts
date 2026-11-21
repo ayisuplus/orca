@@ -9,7 +9,7 @@ describe('a turn that ends on an interim status', () => {
       )
     ).toBe('Accepted as item 77; queued FIFO behind two reviews.')
     expect(botRequestInterimLine('Took over the review.\nNo verdict yet: seat 1 is running.')).toBe(
-      'Took over the review.'
+      'No verdict yet: seat 1 is running.'
     )
     expect(botRequestInterimLine('You are 3rd in the queue.')).toBe('You are 3rd in the queue.')
   })
@@ -22,8 +22,23 @@ describe('a turn that ends on an interim status', () => {
     expect(botRequestInterimLine('NO_REPLY')).toBeNull()
   })
 
+  it('reads a verdict written in chat as no interim status, whatever else it says', () => {
+    expect(botRequestInterimLine('Verdict: PASS. All findings accepted.')).toBeNull()
+    expect(botRequestInterimLine('Done; nothing is queued.')).toBeNull()
+    expect(
+      botRequestInterimLine('Technical scope PASSED; I picked it up from the queue.')
+    ).toBeNull()
+    expect(
+      botRequestInterimLine('CHANGES REQUIRED: two P2 findings, queued behind nothing.')
+    ).toBeNull()
+  })
+
+  it('reads a refusal with a typographic apostrophe as one', () => {
+    expect(botRequestInterimLine('I can’t take this; it is queued elsewhere.')).toBeNull()
+  })
+
   it('cuts a long status line', () => {
-    const line = botRequestInterimLine(`Queued ${'x'.repeat(400)}`)
+    const line = botRequestInterimLine(`Queued behind ${'x'.repeat(400)}`)
     expect(line?.length).toBe(240)
     expect(line?.endsWith('…')).toBe(true)
   })

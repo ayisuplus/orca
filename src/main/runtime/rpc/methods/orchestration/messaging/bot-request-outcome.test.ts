@@ -74,6 +74,8 @@ describe('how a bot request ends', () => {
       bots: { list: () => [{ id: 'docs' }] },
       notifyMessageArrived: (to: string) => notified.push(to),
       getLiveTerminalPaneKey: () => null,
+      readMachineName: () => 'Docs Mac',
+      orchestrationSenderNames: { sender: () => ({ name: 'Docs', party: {} }) },
       ensureStructuredAgentSessionHost: async () =>
         installSenderHost(['11111111-1111-4111-8111-111111111111'], undefined, closingTurn)
     } as unknown as OrcaRuntimeService
@@ -201,6 +203,25 @@ describe('how a bot request ends', () => {
     expect(db.getBotRequestOutcome(id)).toBeNull()
     expect(botAnswerPayload(db, db.getMessageById(id)!)).toBeDefined()
     expect(db.getBotRequestOutcome(id)).toBe('answered')
+  })
+
+  it('tells a paired computer that sent the request, once, that it is queued', async () => {
+    const id = request('question')
+    db.linkPeerMailMessage({
+      conversationId: 'peerconv_aaaaaaaaaaaa',
+      peerFingerprint: 'fp',
+      messageId: id,
+      senderLabel: "orca_session_id:x on Ranger's Mac"
+    })
+    acting.requestIds = [id]
+    acting.said = 'Queued behind item 76; no verdict yet.'
+    await settleBotRequestTurn(runtime, 'docs-session', undefined, 't1')
+    await settleBotRequestTurn(runtime, 'docs-session', undefined, 't2')
+
+    const relayed = db.listPendingFederationRelay('peerconv_aaaaaaaaaaaa', 'to_home')
+    expect(relayed).toHaveLength(1)
+    expect(JSON.parse(relayed[0]!.payload).body).toContain('Queued behind item 76; no verdict yet.')
+    expect(db.getBotRequestOutcome(id)).toBeNull()
   })
 
   it('still says a queued request went unanswered when a later turn ends with no status', async () => {

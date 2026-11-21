@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -437,6 +437,18 @@ describe('mail to a bot on a paired server', () => {
     })
     expect(JSON.stringify(sent)).not.toMatch(/gone\.md|\/usr\/share/)
     expect(b.db.getUnreadMessages(DOCS_HOME)).toMatchObject([{ type: 'question' }])
+  })
+
+  it('warns of a file on this computer whose folder has a space in its name', async () => {
+    mkdirSync(join(dir, 'Application Support'))
+    const brief = join(dir, 'Application Support', 'brief.md')
+    writeFileSync(brief, '# brief')
+
+    expect(
+      await send({ type: 'question', body: `The brief is at ${brief} on my side.` })
+    ).toMatchObject({
+      warnings: [{ code: 'local_paths_unreadable', message: expect.stringContaining(brief) }]
+    })
   })
 
   it('warns of nothing when the body names no file on this computer', async () => {
