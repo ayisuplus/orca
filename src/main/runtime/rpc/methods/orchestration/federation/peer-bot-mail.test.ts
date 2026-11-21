@@ -418,6 +418,33 @@ describe('mail to a bot on a paired server', () => {
     expect(b.db.getInbox(10)).toEqual([])
   })
 
+  it('sends a body naming files on this computer, and warns that the server cannot read them', async () => {
+    const brief = join(dir, 'brief.md')
+    writeFileSync(brief, '# brief')
+
+    const sent = await send({
+      type: 'question',
+      body: `Review ${brief}, and ${join(dir, 'gone.md')} and /usr/share/dict/words.`
+    })
+    expect(sent).toMatchObject({
+      warnings: [
+        {
+          code: 'local_paths_unreadable',
+          recipient: 'bot:Docs',
+          message: expect.stringContaining(`names ${brief} on this computer`)
+        }
+      ]
+    })
+    expect(JSON.stringify(sent)).not.toMatch(/gone\.md|\/usr\/share/)
+    expect(b.db.getUnreadMessages(DOCS_HOME)).toMatchObject([{ type: 'question' }])
+  })
+
+  it('warns of nothing when the body names no file on this computer', async () => {
+    expect(
+      await send({ type: 'question', body: 'Is the guide at /docs/install.md current?' })
+    ).not.toHaveProperty('warnings')
+  })
+
   it('sends the words without the files to a server too old to take them, and says so', async () => {
     bCapabilities = (capabilities) =>
       capabilities.filter(

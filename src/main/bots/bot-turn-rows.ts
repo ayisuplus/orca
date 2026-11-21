@@ -49,6 +49,23 @@ export function turnRows(
   return from === undefined ? window : window.filter((item) => item.sequence >= from)
 }
 
+/** What the ended turn said last: its final assistant message's text; empty when it said nothing. */
+export function turnClosingText(items: readonly AgentJournalRenderItem[], turnId: string): string {
+  const turn = items.findLast(({ body }) => body.kind === 'turn' && body.turnId === turnId)
+  const last = turn
+    ? items.findLast(
+        ({ body, turnScope }) =>
+          body.kind === 'message' &&
+          body.role === 'assistant' &&
+          turnScope?.kind === 'turn' &&
+          turnScope.turnItemId === turn.itemId
+      )
+    : undefined
+  return last?.body.kind === 'message'
+    ? last.body.blocks.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n')
+    : ''
+}
+
 /** A bot's conversations as a turn end reads them, never more of a chat than the end needs. */
 export type BotChatJournal = {
   /** Where the chat's person messages after `after` came from; all of them when null (a chat's

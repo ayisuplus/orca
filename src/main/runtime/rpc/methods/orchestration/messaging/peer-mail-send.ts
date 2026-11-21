@@ -17,6 +17,7 @@ import { recordReceiptBeforeNudge } from './mutation-replay-nudge'
 import type { SendParams } from './send-params'
 import type { SendRecipientWarning } from './recipient-routing'
 import { uploadPeerMailFiles } from './peer-mail-files'
+import { localPathWarning } from './peer-mail-local-paths'
 import { PeerMailMessageType } from '../../../../../../shared/rpc-contract/orchestration/orchestration-peer-mail-params'
 
 const NOTHING_SENT = { effectsApplied: false } as const
@@ -100,16 +101,19 @@ export async function sendPeerMail(args: {
   // An Orca from before files keeps the words and drops the files, so they go only where they're taken.
   const files = server.takesFiles ? params.files : undefined
   const attachments = await uploadPeerMailFiles(runtime, server, { ...params, files })
-  const warnings: SendRecipientWarning[] =
-    params.files?.length && !server.takesFiles
+  const localPaths = await localPathWarning(params.body, to, server.name)
+  const warnings: SendRecipientWarning[] = [
+    ...(params.files?.length && !server.takesFiles
       ? [
           {
-            code: 'files_not_sent',
+            code: 'files_not_sent' as const,
             recipient: to,
             message: `${server.name}'s Orca needs an update to receive files, so the message went without them.`
           }
         ]
-      : []
+      : []),
+    ...(localPaths ? [localPaths] : [])
+  ]
   await deliverPeerMail(runtime, server, conversation, {
     id,
     to,

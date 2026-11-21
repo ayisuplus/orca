@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS bot_request_outcomes (
   outcome     TEXT NOT NULL CHECK(outcome IN ('answered', 'posted', 'unanswered', 'dropped')),
   recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- A request the bot took and queued: no outcome yet, so its answer or a later failure still counts.
+CREATE TABLE IF NOT EXISTS bot_request_pending_notices (
+  message_id TEXT PRIMARY KEY,
+  told_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 /** Records an outcome unless one stands; true when this one was recorded. */
@@ -46,6 +51,15 @@ export function recordBotAnswer(
     )
     .run(messageId)
   return { posted: before === 'posted' }
+}
+
+/** Notes that the sender was told the request is queued; true only the first time. */
+export function recordBotRequestPendingNotice(this: OrchestrationDb, messageId: string): boolean {
+  return (
+    this.db
+      .prepare('INSERT OR IGNORE INTO bot_request_pending_notices (message_id) VALUES (?)')
+      .run(messageId).changes > 0
+  )
 }
 
 export function getBotRequestOutcome(
@@ -82,6 +96,7 @@ export function listUnreadBotRequests(
 export type BotRequestOutcomeMethods = {
   recordBotRequestOutcome: typeof recordBotRequestOutcome
   recordBotAnswer: typeof recordBotAnswer
+  recordBotRequestPendingNotice: typeof recordBotRequestPendingNotice
   getBotRequestOutcome: typeof getBotRequestOutcome
   listUnreadBotRequests: typeof listUnreadBotRequests
 }
@@ -90,6 +105,7 @@ export function attachBotRequestOutcomes(ctor: { prototype: object }): void {
   Object.assign(ctor.prototype, {
     recordBotRequestOutcome,
     recordBotAnswer,
+    recordBotRequestPendingNotice,
     getBotRequestOutcome,
     listUnreadBotRequests
   })

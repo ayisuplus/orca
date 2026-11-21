@@ -37,7 +37,7 @@ export function botTurnEnded(
   void noteBotGroupMemberReply(runtime, sessionId, turnId).catch((error: unknown) =>
     console.warn('[bot-groups] could not note a reply for the sidebar', error)
   )
-  void settleBotRequestTurn(runtime, sessionId, ended).catch((error: unknown) =>
+  void settleBotRequestTurn(runtime, sessionId, ended, turnId).catch((error: unknown) =>
     console.warn('[bots] could not settle a bot request turn', error)
   )
 }

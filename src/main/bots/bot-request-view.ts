@@ -259,6 +259,12 @@ export function botRequestUnansweredText(
     : `${what}, so do it yourself or tell ${askersOf(record)} that ${bot} couldn't take it.`
 }
 
+/** A request the receiving bot took and queued, in its own words, with no answer yet. */
+export function botRequestPendingText(record: BotRequestRecord, said: string): string {
+  const bot = record.toBotName
+  return `${bot} took your ${record.purpose} and has no answer yet; it said: ${JSON.stringify(said)} Its answer comes by mail and wakes you, so don't send it again or do it yourself.`
+}
+
 /** A bot request's mail payload: its view, and any store images claimed for the receiving chat
  *  (`send --item --file`), delivered as that chat's image blocks. */
 export function botRequestPayload(

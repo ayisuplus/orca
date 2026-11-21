@@ -12,9 +12,13 @@ import {
 import { installSenderHost, removeSenderHost } from './bot-request-sender-host.test-fixture'
 import type { AgentSessionFailureFact } from '../../../../../../shared/agent-session/failures/agent-session-failure'
 import { agentSessionFailureWords } from '../../../../../../shared/agent-session/failures/agent-session-failure-words'
+import type { AgentJournalRenderItem } from '../../../../../../shared/agent-session/journal/agent-session-journal-types'
 import type { StructuredAgentSessionRequestFailure } from '../../../../../native-chat/agent-session-wire/observations/structured-agent-session-request-failures'
 
-const acting = vi.hoisted((): { requestIds: string[] } => ({ requestIds: [] }))
+const acting = vi.hoisted((): { requestIds: string[]; said: string | null } => ({
+  requestIds: [],
+  said: null
+}))
 vi.mock('./bot-recipient', () => ({
   readBotTurn: async () => ({
     turn: {
@@ -63,6 +67,7 @@ describe('how a bot request ends', () => {
     db = new OrchestrationDb(':memory:')
     notified.length = 0
     acting.requestIds = []
+    acting.said = null
     // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: these functions read only the db, the bot list and the mail nudge.
     runtime = {
       getOrchestrationDb: () => db,
@@ -70,7 +75,7 @@ describe('how a bot request ends', () => {
       notifyMessageArrived: (to: string) => notified.push(to),
       getLiveTerminalPaneKey: () => null,
       ensureStructuredAgentSessionHost: async () =>
-        installSenderHost(['11111111-1111-4111-8111-111111111111'])
+        installSenderHost(['11111111-1111-4111-8111-111111111111'], undefined, closingTurn)
     } as unknown as OrcaRuntimeService
   })
   afterEach(() => {
@@ -182,6 +187,45 @@ describe('how a bot request ends', () => {
     expect(() => botAnswerPayload(db, original)).toThrow('You already answered that request')
   })
 
+  it('tells the sender once that a request the bot queued is pending, and still takes its answer', async () => {
+    const id = request('question')
+    acting.requestIds = [id]
+    acting.said = 'Accepted as item 77; queued FIFO behind two reviews. Verdict follows.'
+    await settleBotRequestTurn(runtime, 'docs-session', undefined, 't1')
+    await settleBotRequestTurn(runtime, 'docs-session', undefined, 't2')
+
+    const told = mailToRanger()
+    expect(told).toHaveLength(1)
+    expect(told[0]?.body).toContain('Accepted as item 77; queued FIFO behind two reviews.')
+    expect(told[0]?.body).not.toContain("couldn't take it")
+    expect(db.getBotRequestOutcome(id)).toBeNull()
+    expect(botAnswerPayload(db, db.getMessageById(id)!)).toBeDefined()
+    expect(db.getBotRequestOutcome(id)).toBe('answered')
+  })
+
+  it('still says a queued request went unanswered when a later turn ends with no status', async () => {
+    const id = request('question')
+    acting.requestIds = [id]
+    acting.said = 'Queued behind item 76.'
+    await settleBotRequestTurn(runtime, 'docs-session', undefined, 't1')
+    acting.said = null
+    await settleBotRequestTurn(runtime, 'docs-session', undefined, 't2')
+
+    expect(mailToRanger()).toHaveLength(2)
+    expect(mailToRanger().map((mail) => mail.body)).toContain(
+      "Docs ended its turn without answering your question, so do it yourself or tell Nora on Slack that Docs couldn't take it."
+    )
+    expect(db.getBotRequestOutcome(id)).toBe('unanswered')
+  })
+
+  it('says a turn that ends on a refusal went unanswered', async () => {
+    const id = request('question')
+    acting.requestIds = [id]
+    acting.said = "I can't take this review."
+    await settleBotRequestTurn(runtime, 'docs-session', undefined, 't1')
+    expect(db.getBotRequestOutcome(id)).toBe('unanswered')
+  })
+
   it("settles no turn outside a bot's home", async () => {
     acting.requestIds = [request()]
     await settleBotRequestTurn(runtime, 'someone-else')
@@ -259,4 +303,30 @@ function failedTurn(failure: AgentSessionFailureFact): StructuredAgentSessionReq
       ]
     })
   }
+}
+
+/** The named turn, ended, closing on what the bot said last (nothing when it said nothing). */
+function closingTurn(turnIds: readonly string[]): AgentJournalRenderItem[] {
+  const turnId = turnIds[0] ?? 't1'
+  const turn: AgentJournalRenderItem = {
+    itemId: `orca:${turnId}`,
+    revision: 1,
+    sequence: 1,
+    observedAt: 1,
+    body: { kind: 'turn', turnId, state: 'completed', outcome: 'success', completedAt: 2 }
+  }
+  if (acting.said === null) {
+    return [turn]
+  }
+  return [
+    turn,
+    {
+      itemId: `orca:${turnId}:said`,
+      revision: 1,
+      sequence: 2,
+      observedAt: 2,
+      turnScope: { kind: 'turn', turnItemId: turn.itemId },
+      body: { kind: 'message', role: 'assistant', blocks: [{ type: 'text', text: acting.said }] }
+    }
+  ]
 }
