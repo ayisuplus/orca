@@ -1,6 +1,6 @@
 import type { OrcadTerminalCensus } from '../../../shared/remote-runtime/orcad-lifecycle/orcad-terminal-census'
 import type {
-  WslHostConnectIntent,
+  WslHostUpdateIntent,
   WslHostDeferredUpdate
 } from '../../../shared/remote-runtime/wsl-hosts/wsl-host-types'
 import type { WslHostCopyParams } from '../../../shared/remote-runtime/wsl-hosts/wsl-host-failure-copy'
@@ -54,7 +54,7 @@ export function wslConnectingStatus(wait: InstallLockWait | null): WslOrcadConne
 
 /** What a user-initiated connect asks of the host's update. */
 export type WslOrcadConnectIntent = {
-  intent?: WslHostConnectIntent
+  intent?: WslHostUpdateIntent
   /** E9: only reconnect a distro confirmed running; a runtime call must never boot one. */
   noBoot?: boolean
   /** How a no-boot connect confirms the distro runs (set by the connector). */

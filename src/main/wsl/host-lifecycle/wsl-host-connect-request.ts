@@ -9,6 +9,10 @@ export function wslHostConnectOptions(request: {
     // The Settings Connect is the user's own: it keeps a host whose Remove didn't finish. A caller
     // passing false gets the "removal pending" refusal instead.
     withdrawPendingRemoval: request.withdrawPendingRemoval !== false,
-    ...(request.intent === 'update' || request.intent === 'force' ? { intent: request.intent } : {})
+    ...(request.intent === 'update' ||
+    request.intent === 'force' ||
+    request.intent === 'restart-as-wsl-host'
+      ? { intent: request.intent }
+      : {})
   }
 }

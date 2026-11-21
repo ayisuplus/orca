@@ -3,7 +3,6 @@
  * Add/Connect, or when the user switches to one of its workspaces. After a confirmed stop the host is
  * parked: polls and visible work keep it down until the user acts or the distro runs again.
  */
-import { assertWslHostRunAllowed } from './wsl-host-gate'
 import { focusReachability } from './wsl-host-focus-reachability'
 import { ensureWslHostForRuntimeCall } from './wsl-host-runtime-call'
 import type { WslHostDeploymentRecord } from '../../../shared/remote-runtime/host-store/wsl-host-deployment-store'
@@ -24,14 +23,11 @@ import {
 import { sameWslDistro, wslHostRunRefusal } from './wsl-host-add-admission'
 import type { WslOrcadConnection } from '../orcad/wsl-orcad-connection-types'
 import { registerWslHost } from './wsl-host-registration'
+import { connectWslHostForUser } from './wsl-host-user-connect'
 import { WslHostStatusBoard } from './wsl-host-status-board'
 import { withWslHostIds } from './wsl-host-records'
 import { wslHolderKeepPolicy } from './wsl-orphan-holder-release'
-import {
-  admitConnectToPendingHost,
-  readdPendingWslHost,
-  removeWslHostServer
-} from './wsl-host-removal'
+import { readdPendingWslHost, removeWslHostServer } from './wsl-host-removal'
 import type { WslOrcadConnectionStatus } from '../orcad/wsl-orcad-connection-status'
 
 export class WslHostService {
@@ -184,25 +180,28 @@ export class WslHostService {
   }
 
   /**
-   * The user asked for this host: may boot its distro. An intent retries or forces an update.
-   * Only the user's own Connect or Add withdraws an unfinished Remove; any other caller is refused.
+   * The user asked for this host: may boot its distro. An intent retries or forces an update, or
+   * restarts the server as a WSL host. Only the user's own Connect or Add withdraws an unfinished
+   * Remove; any other caller is refused.
    */
   async connect(
     environmentId: string,
     {
       withdrawPendingRemoval = false,
-      ...options
+      intent
     }: { intent?: WslHostConnectIntent; withdrawPendingRemoval?: boolean } = {}
   ): Promise<void> {
     const record = await this.recordForEnvironment(environmentId)
     if (!record) {
       throw new Error('This server is not a WSL host.')
     }
-    assertWslHostRunAllowed(this.deps, this.removing, environmentId)
-    await admitConnectToPendingHost(this.deps.userDataPath(), record, withdrawPendingRemoval)
-    this.wsl.forgetPairingFailures?.(environmentId)
-    this.parked.delete(environmentId)
-    await this.wsl.connect(record.distro, options)
+    const port = {
+      deps: this.deps,
+      connector: this.wsl,
+      removing: this.removing,
+      parked: this.parked
+    }
+    await connectWslHostForUser(port, record, { intent, withdrawPendingRemoval })
   }
 
   /** A runtime call (a poll, a fetch) never boots a distro (E9); see ensureWslHostForRuntimeCall. */
